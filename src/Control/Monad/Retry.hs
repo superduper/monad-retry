@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 -- |
 -- Module     : Control.Monad.Retry
 -- Copyright  : (c) 2013 Toralf Wittner
@@ -5,25 +7,21 @@
 -- Maintainer : Toralf Wittner <tw@dtex.org>
 --
 -- This module is similar to @retry-0.3.0.0@ by Ozgun Ataman and based
--- on its idea. It differs mostly in implementation details, e.g.
---
---      * Depends on @exceptions@ instead on @monad-control@.
---
---      * Catches all but a few (mostly asynchronous) exceptions instead of
---        allowing clients to provide exception 'Handler's.
---
+-- on its idea. It differs mostly in implementation details and depends
+-- on @exceptions@ instead on @monad-control@.
+
 module Control.Monad.Retry
     ( Settings (..)
     , Limit    (..)
     , retry
     , recover
     , redo
+    , redo_
     ) where
 
 import Control.Concurrent
 import Control.Monad.Catch
 import Control.Monad.IO.Class
-import Control.Monad.Trans.Either
 import Data.Dynamic (Dynamic)
 import Data.Word
 import System.Exit (ExitCode)
@@ -60,54 +58,68 @@ retry s stop a = run 0
 
 -- | Turn the given monadic action into one that is retried if an
 -- exception occurs.
---
--- /Please note that asynchronous exceptions from/ @base@ /are not catched./
-recover :: (MonadIO m, MonadCatch m) => Settings -> m a -> m a
-recover s a = run 0
+recover :: (MonadIO m, MonadCatch m)
+        => Settings
+        -> [Handler m Bool] -- ^ Exception handlers.
+        -> m a              -- ^ Retryable action.
+        -> m a
+recover s h a = run 0
   where
-    run n = runEitherT (catchSome a) >>= continue n
+    run n = catches a (map (handler n) h)
 
-    continue n (Left e)  = case retries s of
-        Unlimited -> next n
-        Limited k -> if n >= k then throwM e else next n
-    continue _ (Right x) = return x
+    handler n (Handler f) = Handler $ \e -> f e >>= \b ->
+        if b
+            then case retries s of
+                Unlimited -> next n
+                Limited k -> if n >= k then throwM e else next n
+            else throwM e
 
     next n = liftIO (delay s n) >> run (n + 1)
 
 -- | The combination of 'retry' and 'recover':
 --
--- @redo s stop a = retry s stop (recover s a)@
+-- @redo s stop h a = retry s stop (recover s h a)@
 --
 -- /Note that the total number of executions may thus be n * (n - 1)/.
 redo :: (MonadIO m, MonadCatch m)
      => Settings
-     -> (a -> Bool) -- ^ Termination check: @True@ = finish, @False@ = retry.
-     -> m a         -- ^ Retryable action.
+     -> (a -> Bool)      -- ^ Termination check: @True@ = finish, @False@ = retry.
+     -> [Handler m Bool] -- ^ Exception handlers.
+     -> m a              -- ^ Retryable action.
      -> m a
-redo s stop a = retry s stop (recover s a)
+redo s stop hdlr a = retry s stop (recover s hdlr a)
 
--- Internals:
+-- | The combination of 'retry' and 'recover' ignoring most exceptions from
+-- @base@.
+redo_ :: (MonadIO m, MonadCatch m)
+      => Settings
+      -> (a -> Bool)      -- ^ Termination check: @True@ = finish, @False@ = retry.
+      -> m a              -- ^ Retryable action.
+      -> m a
+redo_ s stop a = retry s stop (recover s allExceptBase a)
 
-catchSome :: MonadCatch m => m a -> EitherT SomeException m a
-catchSome a = EitherT $ catches (a >>= return . Right)
-    [ Handler $ \e -> throwM (e :: E.ArithException)
-    , Handler $ \e -> throwM (e :: E.ArrayException)
-    , Handler $ \e -> throwM (e :: E.AssertionFailed)
-    , Handler $ \e -> throwM (e :: E.AsyncException)
-    , Handler $ \e -> throwM (e :: E.BlockedIndefinitelyOnMVar)
-    , Handler $ \e -> throwM (e :: E.BlockedIndefinitelyOnSTM)
-    , Handler $ \e -> throwM (e :: E.Deadlock)
-    , Handler $ \e -> throwM (e ::   Dynamic)
-    , Handler $ \e -> throwM (e :: E.ErrorCall)
-    , Handler $ \e -> throwM (e ::   ExitCode)
-    , Handler $ \e -> throwM (e :: E.NestedAtomically)
-    , Handler $ \e -> throwM (e :: E.NoMethodError)
-    , Handler $ \e -> throwM (e :: E.NonTermination)
-    , Handler $ \e -> throwM (e :: E.PatternMatchFail)
-    , Handler $ \e -> throwM (e :: E.RecConError)
-    , Handler $ \e -> throwM (e :: E.RecSelError)
-    , Handler $ \e -> throwM (e :: E.RecUpdError)
-    , Handler $ return . Left
+-- Internal:
+
+allExceptBase :: (MonadIO m, MonadCatch m) => [Handler m Bool]
+allExceptBase =
+    [ Handler $ \(e :: E.ArithException) -> throwM e
+    , Handler $ \(e :: E.ArrayException) -> throwM e
+    , Handler $ \(e :: E.AssertionFailed) -> throwM e
+    , Handler $ \(e :: E.AsyncException) -> throwM e
+    , Handler $ \(e :: E.BlockedIndefinitelyOnMVar) -> throwM e
+    , Handler $ \(e :: E.BlockedIndefinitelyOnSTM) -> throwM e
+    , Handler $ \(e :: E.Deadlock) -> throwM e
+    , Handler $ \(e :: Dynamic) -> throwM e
+    , Handler $ \(e :: E.ErrorCall) -> throwM e
+    , Handler $ \(e :: ExitCode) -> throwM e
+    , Handler $ \(e :: E.NestedAtomically) -> throwM e
+    , Handler $ \(e :: E.NoMethodError) -> throwM e
+    , Handler $ \(e :: E.NonTermination) -> throwM e
+    , Handler $ \(e :: E.PatternMatchFail) -> throwM e
+    , Handler $ \(e :: E.RecConError) -> throwM e
+    , Handler $ \(e :: E.RecSelError) -> throwM e
+    , Handler $ \(e :: E.RecUpdError) -> throwM e
+    , Handler $ \(_ :: E.SomeException) -> return True
     ]
 
 delay :: Settings -> Word -> IO ()
