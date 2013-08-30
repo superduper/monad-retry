@@ -44,7 +44,8 @@ retry :: MonadIO m
       -> (a -> Bool) -- ^ Termination check: @True@ = finish, @False@ = retry.
       -> m a         -- ^ Retryable action.
       -> m a
-retry s stop a = run 0
+retry s stop a =
+    if retries s == Limited 0 then a else run 0
   where
     run n = a >>= continue n
 
@@ -58,12 +59,13 @@ retry s stop a = run 0
 
 -- | Turn the given monadic action into one that is retried if an
 -- exception occurs.
-recover :: (MonadIO m, MonadCatchIO m)
+recover :: MonadCatchIO m
         => Settings
         -> [Handler m Bool] -- ^ Exception handlers.
         -> m a              -- ^ Retryable action.
         -> m a
-recover s h a = run 0
+recover s h a =
+    if retries s == Limited 0 then a else run 0
   where
     run n = catches a (map (handler n) h)
 
@@ -81,7 +83,7 @@ recover s h a = run 0
 -- @redo s stop h a = retry s stop (recover s h a)@
 --
 -- /Note that the total number of executions may thus be n * (n - 1)/.
-redo :: (MonadIO m, MonadCatchIO m)
+redo :: MonadCatchIO m
      => Settings
      -> (a -> Bool)      -- ^ Termination check: @True@ = finish, @False@ = retry.
      -> [Handler m Bool] -- ^ Exception handlers.
@@ -91,7 +93,7 @@ redo s stop hdlr a = retry s stop (recover s hdlr a)
 
 -- | The combination of 'retry' and 'recover' ignoring most exceptions from
 -- @base@.
-redo_ :: (MonadIO m, MonadCatchIO m)
+redo_ :: MonadCatchIO m
       => Settings
       -> (a -> Bool)      -- ^ Termination check: @True@ = finish, @False@ = retry.
       -> m a              -- ^ Retryable action.
@@ -100,7 +102,7 @@ redo_ s stop a = retry s stop (recover s allExceptBase a)
 
 -- Internal:
 
-allExceptBase :: (MonadIO m, MonadCatchIO m) => [Handler m Bool]
+allExceptBase :: MonadCatchIO m => [Handler m Bool]
 allExceptBase =
     [ Handler $ \(e :: E.ArithException) -> throw e
     , Handler $ \(e :: E.ArrayException) -> throw e

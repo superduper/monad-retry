@@ -44,7 +44,8 @@ retry :: MonadIO m
       -> (a -> Bool) -- ^ Termination check: @True@ = finish, @False@ = retry.
       -> m a         -- ^ Retryable action.
       -> m a
-retry s stop a = run 0
+retry s stop a =
+    if retries s == Limited 0 then a else run 0
   where
     run n = a >>= continue n
 
@@ -63,7 +64,8 @@ recover :: (MonadIO m, MonadCatch m)
         -> [Handler m Bool] -- ^ Exception handlers.
         -> m a              -- ^ Retryable action.
         -> m a
-recover s h a = run 0
+recover s h a =
+    if retries s == Limited 0 then a else run 0
   where
     run n = catches a (map (handler n) h)
 
@@ -100,7 +102,7 @@ redo_ s stop a = retry s stop (recover s allExceptBase a)
 
 -- Internal:
 
-allExceptBase :: (MonadIO m, MonadCatch m) => [Handler m Bool]
+allExceptBase :: MonadCatch m => [Handler m Bool]
 allExceptBase =
     [ Handler $ \(e :: E.ArithException) -> throwM e
     , Handler $ \(e :: E.ArrayException) -> throwM e
