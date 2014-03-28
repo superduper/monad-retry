@@ -9,3 +9,5 @@ log/
 tags
 ID
 cabal-dev/
+.cabal-sandbox
+cabal.sandbox.config

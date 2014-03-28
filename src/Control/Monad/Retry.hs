@@ -1,15 +1,12 @@
+-- This Source Code Form is subject to the terms of the Mozilla Public
+-- License, v. 2.0. If a copy of the MPL was not distributed with this
+-- file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- |
--- Module     : Control.Monad.Retry
--- Copyright  : (c) 2013 Toralf Wittner
--- License    : MPL-2.0
--- Maintainer : Toralf Wittner <tw@dtex.org>
---
--- This module is similar to @retry-0.3.0.0@ by Ozgun Ataman and based
+-- | This module is similar to @retry-0.3.0.0@ by Ozgun Ataman and based
 -- on its idea. It differs mostly in implementation details and depends
 -- on @exceptions@ instead on @monad-control@.
-
 module Control.Monad.Retry
     ( Settings (..)
     , Limit    (..)
