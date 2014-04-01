@@ -22,4 +22,4 @@ library
     build-depends:
         base          == 4.*
       , transformers  == 0.3.*
-      , exceptions    >= 0.2 && < 0.5
+      , exceptions    >= 0.2 && < 0.6
